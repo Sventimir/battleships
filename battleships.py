@@ -85,19 +85,21 @@ class Board:
 
     def shoot(self, x, y):
         try:
-            sq = self.grid[y][x]
-            sq.hit = True
-            return "hit" if sq.ship.hp > 0 else "sunk"
+            sq = self.grid[x][y]
+            if sq.hit:
+                return "miss"
+            else:
+                sq.hit = True
+                return "hit" if sq.ship.hp > 0 else "sunk"
         except AttributeError:
             return "miss"
         except IndexError:
             return "miss"
 
-    def to_json(self):
-        return json.dumps({
+    def to_dict(self):
+        return {
             "board": [[sq.show(False) for sq in row] for row in self.grid],
-            "remaining_ships": { n: sum(1 for s in self.ships if s.size == n and not s.sunk) for n in range(1, 6) }})
-        
+            "remaining_ships": { n: sum(1 for s in self.ships if s.size == n and not s.sunk) for n in range(1, 6) }}
 
 class Ship:
     def __init__(self, ident, squares):
@@ -175,10 +177,11 @@ class SubprocessPlayer(Player):
         except Exception:
             pass
         self.process = self.process = subprocess.Popen(
-            args,
-            executable=executable,
+            [executable] + args,
+            bufsize=-1,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             universal_newlines=True,
             shell=False
         )
@@ -192,11 +195,12 @@ class SubprocessPlayer(Player):
     def make_shot(self, board):
         self.send_command({
             "event": "shoot",
-            "own_board": board.to_json(),
-            "opponent_board": board.to_json()
+            "own_board": board.to_dict(),
+            "opponent_board": board.to_dict()
         })
-        x, y = self.process.stdout.readline().split()
-        print("Received shot: {}{} from {}.)".format(x, y, self.name))
+        msg = self.process.stdout.readline()
+        x, y = msg.split()
+        print("Received shot: {}{} from {}.".format(x, y, self.name))
         return (letter_coord(x), int(y))
 
     def status(self, status):
@@ -206,8 +210,9 @@ class SubprocessPlayer(Player):
         })
 
     def send_command(self, cmd):
-        print("Sending command: {} to {}...".format(cmd, self.name))
-        self.process.stdin.write(json.dumps(cmd) + "\n")
+        j = json.dumps(cmd)
+        print("Sending command: {} to {}...".format(j, self.name))
+        self.process.stdin.write(j + "\n")
         self.process.stdin.flush()
 
 
@@ -237,13 +242,13 @@ def main(args):
         )
     elif args.type == "subprocess":
         current_player, other_player = setup(
-            SubprocessPlayer(args.size, args.player1, args=getattr(args, "1")),
-            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2"))
+            SubprocessPlayer(args.size, args.player1, args=getattr(args, "1") or ()),
+            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2") or ())
         )
     elif args.type == "mixed":
         current_player, other_player = setup(
             ConsolePlayer(args.size, args.player1),
-            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2"))
+            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2", ()))
         )
     else:
         print("Unknown game type: {}".format(game_type), file=sys.stderr)
@@ -258,7 +263,10 @@ def main(args):
         elif other_player.has_lost():
             current_player.status("game_over")
             other_player.status("game_over")
-            print("{} has won!".format(players[current_player].name))
+            print("{} has won!".format(current_player.name))
+            current_player.board.show()
+            print("{}'s board:".format(other_player.name))
+            other_player.board.show()
             break
         else:
             continue
