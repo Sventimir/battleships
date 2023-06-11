@@ -172,7 +172,7 @@ class SubprocessPlayer(Player):
         super().__init__(board_size)
         try:
             args = json.loads(args[0])
-        except RuntimeError:
+        except Exception:
             pass
         self.process = self.process = subprocess.Popen(
             args,
@@ -182,10 +182,12 @@ class SubprocessPlayer(Player):
             universal_newlines=True,
             shell=False
         )
+        self.send_command({"event": "init", "size": board_size})
 
     def setup(self):
-       data = json.loads(self.process.stdout.readline())
-       super().setup(data)
+        data = json.loads(self.process.stdout.readline())
+        super().setup(data)
+        print("Initialized player {}.".format(self.name))
 
     def make_shot(self, board):
         self.send_command({
@@ -194,6 +196,7 @@ class SubprocessPlayer(Player):
             "opponent_board": board.to_json()
         })
         x, y = self.process.stdout.readline().split()
+        print("Received shot: {}{} from {}.)".format(x, y, self.name))
         return (letter_coord(x), int(y))
 
     def status(self, status):
@@ -203,6 +206,7 @@ class SubprocessPlayer(Player):
         })
 
     def send_command(self, cmd):
+        print("Sending command: {} to {}...".format(cmd, self.name))
         self.process.stdin.write(json.dumps(cmd) + "\n")
         self.process.stdin.flush()
 
@@ -233,13 +237,13 @@ def main(args):
         )
     elif args.type == "subprocess":
         current_player, other_player = setup(
-            SubprocessPlayer(args.size, args.player1, args=args._1),
-            SubprocessPlayer(args.size, args.player2, args=args._2)
+            SubprocessPlayer(args.size, args.player1, args=getattr(args, "1")),
+            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2"))
         )
     elif args.type == "mixed":
         current_player, other_player = setup(
             ConsolePlayer(args.size, args.player1),
-            SubprocessPlayer(args.size, args.player2, args=args._2)
+            SubprocessPlayer(args.size, args.player2, args=getattr(args, "2"))
         )
     else:
         print("Unknown game type: {}".format(game_type), file=sys.stderr)
@@ -252,6 +256,8 @@ def main(args):
         if result == "miss":
             current_player, other_player = other_player, current_player
         elif other_player.has_lost():
+            current_player.status("game_over")
+            other_player.status("game_over")
             print("{} has won!".format(players[current_player].name))
             break
         else:
