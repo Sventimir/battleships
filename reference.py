@@ -6,7 +6,7 @@ import sys
 names_files = ("male-names.txt", "female-names.txt")
 
 def init(data):
-    with open("lis.json", "r") as f:
+    with open("setup.json", "r") as f:
         state = json.load(f)
     names_file = random.choice(names_files)
     with open(names_file, "r") as f:
